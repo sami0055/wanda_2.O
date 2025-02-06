@@ -234,7 +234,7 @@ def prune_activations(activation_importance, threshold=0.01):
     activation_mask = activation_importance < torch.percentile(activation_importance, threshold * 100)
     return activation_mask
 
-def prune_wanda_with_attention(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0):
+def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0):
     use_cache = model.config.use_cache 
     model.config.use_cache = False 
 
