@@ -60,14 +60,9 @@ def prepare_calibration_input(model, dataloader, device):
     model.config.use_cache = False
     layers = model.model.layers
 
-    # # dev = model.hf_device_map["model.embed_tokens"]
-    # if "model.embed_tokens" in model.hf_device_map:
-    #     device = model.hf_device_map["model.embed_tokens"]
-    # Check if the model has 'hf_device_map' and fall back to default device if not
-    if hasattr(model, "hf_device_map") and "model.embed_tokens" in model.hf_device_map:
+    # dev = model.hf_device_map["model.embed_tokens"]
+    if "model.embed_tokens" in model.hf_device_map:
         device = model.hf_device_map["model.embed_tokens"]
-    else:
-        device = next(model.parameters()).device  # Fallback to the device of the model
 
     dtype = next(iter(model.parameters())).dtype
     inps = torch.zeros((128, model.seqlen, model.config.hidden_size), dtype=dtype, device=device)
