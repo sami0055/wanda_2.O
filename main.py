@@ -22,12 +22,13 @@ def get_llm(model_name, cache_dir="llm_weights"):
         device_map="auto"
     )
 
-    model.seqlen = model.config.max_position_embeddings 
+
     return model
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, help='LLaMA model')
+    parser.add_argument('--gguf', action="store_true", help="Enable gguf file")
     parser.add_argument('--seed', type=int, default=0, help='Seed for sampling the calibration data.')
     parser.add_argument('--nsamples', type=int, default=128, help='Number of calibration samples.')
     parser.add_argument('--sparsity_ratio', type=float, default=0, help='Sparsity level')
@@ -52,11 +53,26 @@ def main():
         assert args.sparsity_ratio == 0.5, "sparsity ratio must be 0.5 for structured N:M sparsity"
         prune_n, prune_m = map(int, args.sparsity_type.split(":"))
 
-    model_name = args.model.split("/")[-1]
-    print(f"loading llm model {args.model}")
-    model = get_llm(args.model, args.cache_dir)
-    model.eval()
-    tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
+    if args.gguf:
+        # Use a pipeline as a high-level helper
+        from transformers import pipeline
+        
+        model_name = "QuantFactory/Llama-3.2-3B-GGUF"
+
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name, 
+            torch_dtype=torch.float16, 
+        )
+        
+        print(f"loading llm model {model_name}")
+        model.eval()
+        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
+    else:
+        model_name = args.model.split("/")[-1]
+        print(f"loading llm model {args.model}")
+        model = get_llm(args.model, args.cache_dir)
+        model.eval()
+        tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
 
     device = torch.device("cuda:0")
     if "30b" in args.model or "65b" in args.model: # for 30b and 65b we use device_map to load onto multiple A6000 GPUs, thus the processing here.
