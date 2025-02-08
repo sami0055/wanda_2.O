@@ -55,11 +55,10 @@ def main():
 
     if args.gguf:
         # Use a pipeline as a high-level helper
-        from transformers import pipeline
         model_id = "TheBloke/Llama-2-7B-GGUF"
         filename = "llama-2-7b.Q4_K_M.gguf"
         tokenizer = AutoTokenizer.from_pretrained(model_id, gguf_file=filename)
-        model = AutoModelForCausalLM.from_pretrained(model_id, gguf_file=filename)
+        model = AutoModelForCausalLM.from_pretrained(model_id, gguf_file=filename, max_length=512)
         model.eval()
     else:
         model_name = args.model.split("/")[-1]
