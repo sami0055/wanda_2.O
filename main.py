@@ -60,17 +60,7 @@ def main():
         tokenizer = AutoTokenizer.from_pretrained(model_id, gguf_file=filename, max_length=512)
         model = AutoModelForCausalLM.from_pretrained(model_id, gguf_file=filename)
         model.eval()
-         # Check if 'hf_device_map' is available, if not, fallback to device assignment from model parameters
-        if hasattr(model, "hf_device_map"):       
-             device = model.hf_device_map.get("model.embed_tokens", "cpu")  # Default to CPU if not found
-        else:
-         device = next(model.parameters()).device  # Fallback to model's device
-
-    # Move model to the correct device
-        model.to(device)
-
-        print(f"Model is loaded on {device}.")
-
+        
     else:
         model_name = args.model.split("/")[-1]
         print(f"loading llm model {args.model}")
