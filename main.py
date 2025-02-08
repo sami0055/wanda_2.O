@@ -57,8 +57,8 @@ def main():
         # Use a pipeline as a high-level helper
         model_id = "TheBloke/Llama-2-7B-GGUF"
         filename = "llama-2-7b.Q4_K_M.gguf"
-        tokenizer = AutoTokenizer.from_pretrained(model_id, gguf_file=filename)
-        model = AutoModelForCausalLM.from_pretrained(model_id, gguf_file=filename, max_length=512)
+        tokenizer = AutoTokenizer.from_pretrained(model_id, gguf_file=filename, max_length=512)
+        model = AutoModelForCausalLM.from_pretrained(model_id, gguf_file=filename)
         model.eval()
     else:
         model_name = args.model.split("/")[-1]
