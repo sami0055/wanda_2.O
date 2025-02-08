@@ -124,125 +124,13 @@ def prune_magnitude(args, model, tokenizer, device=torch.device("cuda:0"), prune
 
             W[W_mask] = 0
 
-# def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0):
-#     use_cache = model.config.use_cache 
-#     model.config.use_cache = False 
-
-#     print("loading calibdation data")
-#     dataloader, _ = get_loaders("c4",nsamples=args.nsamples,seed=args.seed,seqlen=model.seqlen,tokenizer=tokenizer)
-#     print("dataset loading complete")
-#     with torch.no_grad():
-#         inps, outs, attention_mask, position_ids = prepare_calibration_input(model, dataloader, device)
-
-#     layers = model.model.layers
-#     for i in range(len(layers)):
-#         layer = layers[i]
-#         subset = find_layers(layer)
-
-#         if f"model.layers.{i}" in model.hf_device_map:   ## handle the case for llama-30B and llama-65B, when the device map has multiple GPUs;
-#             dev = model.hf_device_map[f"model.layers.{i}"]
-#             inps, outs, attention_mask, position_ids = inps.to(dev), outs.to(dev), attention_mask.to(dev), position_ids.to(dev)
-
-#         wrapped_layers = {}
-#         for name in subset:
-#             wrapped_layers[name] = WrappedGPT(subset[name])
-
-#         def add_batch(name):
-#             def tmp(_, inp, out):
-#                 wrapped_layers[name].add_batch(inp[0].data, out.data)
-#             return tmp
-
-#         handles = []
-#         for name in wrapped_layers:
-#             handles.append(subset[name].register_forward_hook(add_batch(name)))
-#         for j in range(args.nsamples):
-#             with torch.no_grad():
-#                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
-#         for h in handles:
-#             h.remove()
-
-#         for name in subset:
-#             print(f"pruning layer {i} name {name}")
-#             W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
-
-#             W_mask = (torch.zeros_like(W_metric) == 1)  ## initialize a mask to be all False
-#             if prune_n != 0:
-#                 # structured n:m sparsity
-#                 for ii in range(W_metric.shape[1]):
-#                     if ii % prune_m == 0:
-#                         tmp = W_metric[:,ii:(ii+prune_m)].float()
-#                         W_mask.scatter_(1,ii+torch.topk(tmp, prune_n,dim=1, largest=False)[1], True)
-#             else:
-#                 sort_res = torch.sort(W_metric, dim=-1, stable=True)
-
-#                 if args.use_variant:
-#                     # wanda variant 
-#                     tmp_metric = torch.cumsum(sort_res[0], dim=1)
-#                     sum_before = W_metric.sum(dim=1)
-
-#                     alpha = 0.4
-#                     alpha_hist = [0., 0.8]
-#                     W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before)
-#                     while (torch.abs(cur_sparsity - args.sparsity_ratio)>0.001) and (alpha_hist[1]-alpha_hist[0]>=0.001):
-#                         if cur_sparsity > args.sparsity_ratio:
-#                             alpha_new = (alpha + alpha_hist[0]) / 2.0
-#                             alpha_hist[1] = alpha
-#                         else:
-#                             alpha_new = (alpha + alpha_hist[1]) / 2.0
-#                             alpha_hist[0] = alpha
-
-#                         alpha = alpha_new 
-#                         W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before)
-#                     print(f"alpha found {alpha} sparsity {cur_sparsity:.6f}")
-#                 else:
-#                     # unstructured pruning
-#                     indices = sort_res[1][:,:int(W_metric.shape[1]*args.sparsity_ratio)]
-#                     W_mask.scatter_(1, indices, True)
-
-#             subset[name].weight.data[W_mask] = 0  ## set weights to zero 
-
-#         for j in range(args.nsamples):
-#             with torch.no_grad():
-#                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
-#         inps, outs = outs, inps
-
-#     model.config.use_cache = use_cache 
-#     torch.cuda.empty_cache()
-
-# Function to calculate attention scores (importance of attention heads)
-def calculate_attention_scores(wrapped_layers):
-    attention_scores = {}
-    for name, layer in wrapped_layers.items():
-        # Extract attention weights from the layer (assuming the layer has an `attn` attribute)
-        attention_weights = layer.attn.attn_weights  # Example: the attention weights of the layer
-        # Calculate a simple attention score by summing the absolute attention weights
-        score = attention_weights.abs().sum(dim=-1).mean(dim=-1)  # Mean over all tokens in the sequence
-        attention_scores[name] = score
-    return attention_scores
-
-# Function to identify redundant attention heads based on a threshold
-def identify_redundant_heads(attention_scores, threshold=0.01):
-    redundant_heads = []
-    for head, score in attention_scores.items():
-        if score < threshold:
-            redundant_heads.append(head)
-    return redundant_heads
-
-# Function to prune activations based on their importance
-def prune_activations(activation_importance, threshold=0.01):
-    # Activation importance below threshold will be pruned
-    activation_mask = activation_importance < torch.percentile(activation_importance, threshold * 100)
-    return activation_mask
-
 def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0):
     use_cache = model.config.use_cache 
     model.config.use_cache = False 
 
-    print("loading calibration data")
-    dataloader, _ = get_loaders("c4", nsamples=args.nsamples, seed=args.seed, seqlen=model.seqlen, tokenizer=tokenizer)
+    print("loading calibdation data")
+    dataloader, _ = get_loaders("c4",nsamples=args.nsamples,seed=args.seed,seqlen=model.seqlen,tokenizer=tokenizer)
     print("dataset loading complete")
-    
-    # Prepare calibration input
     with torch.no_grad():
         inps, outs, attention_mask, position_ids = prepare_calibration_input(model, dataloader, device)
 
@@ -267,52 +155,35 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
         handles = []
         for name in wrapped_layers:
             handles.append(subset[name].register_forward_hook(add_batch(name)))
-
-        # Forward pass to collect activations
         for j in range(args.nsamples):
             with torch.no_grad():
                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
-        
         for h in handles:
             h.remove()
-
-        # Calculate attention scores
-        attention_scores = calculate_attention_scores(wrapped_layers)
-
-        # Identify attention heads to prune based on attention scores
-        redundant_heads = identify_redundant_heads(attention_scores, threshold=args.attention_prune_threshold)
 
         for name in subset:
             print(f"pruning layer {i} name {name}")
             W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
 
-            # Calculate Activation Importance (using the average activation)
-            activation_importance = wrapped_layers[name].scaler_row.abs().mean(dim=0)  # This sums up the activations and calculates importance.
-
-            # Combine weight and activation importance
-            combined_importance = W_metric * activation_importance.unsqueeze(0)  # Broadcast activations importance with weights importance
-
-            # Initialize mask as False
-            W_mask = (torch.zeros_like(combined_importance) == 1)
-
+            W_mask = (torch.zeros_like(W_metric) == 1)  ## initialize a mask to be all False
             if prune_n != 0:
-                # Structured n:m sparsity
-                for ii in range(combined_importance.shape[1]):
+                # structured n:m sparsity
+                for ii in range(W_metric.shape[1]):
                     if ii % prune_m == 0:
-                        tmp = combined_importance[:,ii:(ii+prune_m)].float()
-                        W_mask.scatter_(1, ii + torch.topk(tmp, prune_n, dim=1, largest=False)[1], True)
+                        tmp = W_metric[:,ii:(ii+prune_m)].float()
+                        W_mask.scatter_(1,ii+torch.topk(tmp, prune_n,dim=1, largest=False)[1], True)
             else:
-                sort_res = torch.sort(combined_importance, dim=-1, stable=True)
+                sort_res = torch.sort(W_metric, dim=-1, stable=True)
 
                 if args.use_variant:
-                    # Wanda variant
+                    # wanda variant 
                     tmp_metric = torch.cumsum(sort_res[0], dim=1)
-                    sum_before = combined_importance.sum(dim=1)
+                    sum_before = W_metric.sum(dim=1)
 
                     alpha = 0.4
                     alpha_hist = [0., 0.8]
-                    W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, combined_importance, tmp_metric, sum_before)
-                    while (torch.abs(cur_sparsity - args.sparsity_ratio) > 0.001) and (alpha_hist[1] - alpha_hist[0] >= 0.001):
+                    W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before)
+                    while (torch.abs(cur_sparsity - args.sparsity_ratio)>0.001) and (alpha_hist[1]-alpha_hist[0]>=0.001):
                         if cur_sparsity > args.sparsity_ratio:
                             alpha_new = (alpha + alpha_hist[0]) / 2.0
                             alpha_hist[1] = alpha
@@ -320,24 +191,16 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
                             alpha_new = (alpha + alpha_hist[1]) / 2.0
                             alpha_hist[0] = alpha
 
-                        alpha = alpha_new
-                        W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, combined_importance, tmp_metric, sum_before)
+                        alpha = alpha_new 
+                        W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before)
                     print(f"alpha found {alpha} sparsity {cur_sparsity:.6f}")
                 else:
-                    # Unstructured pruning
-                    indices = sort_res[1][:, :int(combined_importance.shape[1] * args.sparsity_ratio)]
+                    # unstructured pruning
+                    indices = sort_res[1][:,:int(W_metric.shape[1]*args.sparsity_ratio)]
                     W_mask.scatter_(1, indices, True)
 
-            # Apply the mask to prune weights
             subset[name].weight.data[W_mask] = 0  ## set weights to zero 
 
-            # Optionally, prune activations as well (set neuron activations to zero if less important)
-            if args.prune_activations:
-                # Apply activation pruning
-                activation_mask = prune_activations(activation_importance, threshold=args.activation_prune_threshold)
-                outs[:, activation_mask] = 0  # Zero out the activations in the output if they are less important
-
-        # Swap inps and outs for the next layer's computation
         for j in range(args.nsamples):
             with torch.no_grad():
                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
@@ -346,7 +209,144 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
     model.config.use_cache = use_cache 
     torch.cuda.empty_cache()
 
-@torch.no_grad()
+# # Function to calculate attention scores (importance of attention heads)
+# def calculate_attention_scores(wrapped_layers):
+#     attention_scores = {}
+#     for name, layer in wrapped_layers.items():
+#         # Extract attention weights from the layer (assuming the layer has an `attn` attribute)
+#         attention_weights = layer.attn.attn_weights  # Example: the attention weights of the layer
+#         # Calculate a simple attention score by summing the absolute attention weights
+#         score = attention_weights.abs().sum(dim=-1).mean(dim=-1)  # Mean over all tokens in the sequence
+#         attention_scores[name] = score
+#     return attention_scores
+
+# # Function to identify redundant attention heads based on a threshold
+# def identify_redundant_heads(attention_scores, threshold=0.01):
+#     redundant_heads = []
+#     for head, score in attention_scores.items():
+#         if score < threshold:
+#             redundant_heads.append(head)
+#     return redundant_heads
+
+# # Function to prune activations based on their importance
+# def prune_activations(activation_importance, threshold=0.01):
+#     # Activation importance below threshold will be pruned
+#     activation_mask = activation_importance < torch.percentile(activation_importance, threshold * 100)
+#     return activation_mask
+
+# def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0):
+#     use_cache = model.config.use_cache 
+#     model.config.use_cache = False 
+
+#     print("loading calibration data")
+#     dataloader, _ = get_loaders("c4", nsamples=args.nsamples, seed=args.seed, seqlen=model.seqlen, tokenizer=tokenizer)
+#     print("dataset loading complete")
+    
+#     # Prepare calibration input
+#     with torch.no_grad():
+#         inps, outs, attention_mask, position_ids = prepare_calibration_input(model, dataloader, device)
+
+#     layers = model.model.layers
+#     for i in range(len(layers)):
+#         layer = layers[i]
+#         subset = find_layers(layer)
+
+#         if f"model.layers.{i}" in model.hf_device_map:   ## handle the case for llama-30B and llama-65B, when the device map has multiple GPUs;
+#             dev = model.hf_device_map[f"model.layers.{i}"]
+#             inps, outs, attention_mask, position_ids = inps.to(dev), outs.to(dev), attention_mask.to(dev), position_ids.to(dev)
+
+#         wrapped_layers = {}
+#         for name in subset:
+#             wrapped_layers[name] = WrappedGPT(subset[name])
+
+#         def add_batch(name):
+#             def tmp(_, inp, out):
+#                 wrapped_layers[name].add_batch(inp[0].data, out.data)
+#             return tmp
+
+#         handles = []
+#         for name in wrapped_layers:
+#             handles.append(subset[name].register_forward_hook(add_batch(name)))
+
+#         # Forward pass to collect activations
+#         for j in range(args.nsamples):
+#             with torch.no_grad():
+#                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
+        
+#         for h in handles:
+#             h.remove()
+
+#         # Calculate attention scores
+#         attention_scores = calculate_attention_scores(wrapped_layers)
+
+#         # Identify attention heads to prune based on attention scores
+#         redundant_heads = identify_redundant_heads(attention_scores, threshold=args.attention_prune_threshold)
+
+#         for name in subset:
+#             print(f"pruning layer {i} name {name}")
+#             W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
+
+#             # Calculate Activation Importance (using the average activation)
+#             activation_importance = wrapped_layers[name].scaler_row.abs().mean(dim=0)  # This sums up the activations and calculates importance.
+
+#             # Combine weight and activation importance
+#             combined_importance = W_metric * activation_importance.unsqueeze(0)  # Broadcast activations importance with weights importance
+
+#             # Initialize mask as False
+#             W_mask = (torch.zeros_like(combined_importance) == 1)
+
+#             if prune_n != 0:
+#                 # Structured n:m sparsity
+#                 for ii in range(combined_importance.shape[1]):
+#                     if ii % prune_m == 0:
+#                         tmp = combined_importance[:,ii:(ii+prune_m)].float()
+#                         W_mask.scatter_(1, ii + torch.topk(tmp, prune_n, dim=1, largest=False)[1], True)
+#             else:
+#                 sort_res = torch.sort(combined_importance, dim=-1, stable=True)
+
+#                 if args.use_variant:
+#                     # Wanda variant
+#                     tmp_metric = torch.cumsum(sort_res[0], dim=1)
+#                     sum_before = combined_importance.sum(dim=1)
+
+#                     alpha = 0.4
+#                     alpha_hist = [0., 0.8]
+#                     W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, combined_importance, tmp_metric, sum_before)
+#                     while (torch.abs(cur_sparsity - args.sparsity_ratio) > 0.001) and (alpha_hist[1] - alpha_hist[0] >= 0.001):
+#                         if cur_sparsity > args.sparsity_ratio:
+#                             alpha_new = (alpha + alpha_hist[0]) / 2.0
+#                             alpha_hist[1] = alpha
+#                         else:
+#                             alpha_new = (alpha + alpha_hist[1]) / 2.0
+#                             alpha_hist[0] = alpha
+
+#                         alpha = alpha_new
+#                         W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, combined_importance, tmp_metric, sum_before)
+#                     print(f"alpha found {alpha} sparsity {cur_sparsity:.6f}")
+#                 else:
+#                     # Unstructured pruning
+#                     indices = sort_res[1][:, :int(combined_importance.shape[1] * args.sparsity_ratio)]
+#                     W_mask.scatter_(1, indices, True)
+
+#             # Apply the mask to prune weights
+#             subset[name].weight.data[W_mask] = 0  ## set weights to zero 
+
+#             # Optionally, prune activations as well (set neuron activations to zero if less important)
+#             if args.prune_activations:
+#                 # Apply activation pruning
+#                 activation_mask = prune_activations(activation_importance, threshold=args.activation_prune_threshold)
+#                 outs[:, activation_mask] = 0  # Zero out the activations in the output if they are less important
+
+#         # Swap inps and outs for the next layer's computation
+#         for j in range(args.nsamples):
+#             with torch.no_grad():
+#                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
+#         inps, outs = outs, inps
+
+#     model.config.use_cache = use_cache 
+#     torch.cuda.empty_cache()
+
+# @torch.no_grad()
 def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
     ## SparseGPT code available at: https://github.com/IST-DASLab/sparsegpt/tree/f5c25005a61f96a0933ca2f95705a963585aafaa
     print('Starting ...')
