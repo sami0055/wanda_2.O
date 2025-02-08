@@ -60,10 +60,7 @@ def main():
         filename = "llama-2-7b.Q4_K_M.gguf"
         tokenizer = AutoTokenizer.from_pretrained(model_id, gguf_file=filename)
         model = AutoModelForCausalLM.from_pretrained(model_id, gguf_file=filename)
-        
-        print(f"loading llm model {model_name}")
         model.eval()
-        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
     else:
         model_name = args.model.split("/")[-1]
         print(f"loading llm model {args.model}")
